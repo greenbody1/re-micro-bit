@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Micro:bit Bluetooth Connection</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        button {
+            background-color: #007AFF;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            margin: 10px;
+            cursor: pointer;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        #status {
+            margin: 20px;
+            padding: 10px;
+            border-radius: 8px;
+            background-color: #f5f5f5;
+        }
+        #dataDisplay {
+            margin: 20px;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <h1>Micro:bit Bluetooth Connection</h1>
+    <div id="status">Status: Disconnected</div>
+    <button id="connectButton">Connect to Micro:bit</button>
+    <button id="sendButton" disabled>Send Test Signal</button>
+    <div id="dataDisplay">
+        <h3>Received Data:</h3>
+        <pre id="receivedData"></pre>
+    </div>
+
+    <script>
+        // Micro:bit Bluetooth UART Service UUID
+        const UART_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+        const UART_TX_CHARACTERISTIC_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+        const UART_RX_CHARACTERISTIC_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+
+        let device, rxCharacteristic, txCharacteristic;
+        const connectButton = document.getElementById('connectButton');
+        const sendButton = document.getElementById('sendButton');
+        const statusDiv = document.getElementById('status');
+        const receivedDataDiv = document.getElementById('receivedData');
+
+        connectButton.addEventListener('click', async () => {
+            try {
+                // Request device with UART service
+                device = await navigator.bluetooth.requestDevice({
+                    filters: [{ namePrefix: 'BBC micro:bit' }],
+                    optionalServices: [UART_SERVICE_UUID]
+                });
+
+                statusDiv.textContent = 'Status: Connecting...';
+                
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(UART_SERVICE_UUID);
+                
+                // Get characteristics for sending and receiving data
+                txCharacteristic = await service.getCharacteristic(UART_TX_CHARACTERISTIC_UUID);
+                rxCharacteristic = await service.getCharacteristic(UART_RX_CHARACTERISTIC_UUID);
+
+                // Enable notifications for receiving data
+                await rxCharacteristic.startNotifications();
+                rxCharacteristic.addEventListener('characteristicvaluechanged', handleData);
+
+                statusDiv.textContent = 'Status: Connected';
+                sendButton.disabled = false;
+                connectButton.disabled = true;
+
+                // Handle disconnect
+                device.addEventListener('gattserverdisconnected', handleDisconnect);
+            } catch (error) {
+                console.error(error);
+                statusDiv.textContent = `Status: Error - ${error.message}`;
+            }
+        });
+
+        sendButton.addEventListener('click', async () => {
+            if (txCharacteristic) {
+                const data = new Uint8Array([72, 101, 108, 108, 111]); // "Hello"
+                await txCharacteristic.writeValue(data);
+            }
+        });
+
+        function handleData(event) {
+            const value = event.target.value;
+            const decoder = new TextDecoder();
+            const data = decoder.decode(value);
+            receivedDataDiv.textContent += data + '\n';
+        }
+
+        function handleDisconnect() {
+            statusDiv.textContent = 'Status: Disconnected';
+            sendButton.disabled = true;
+            connectButton.disabled = false;
+            device = null;
+            rxCharacteristic = null;
+            txCharacteristic = null;
+        }
+    </script>
+</body>
+</html>
